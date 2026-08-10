@@ -102,12 +102,37 @@ async def ask_question(request: AskRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Chart tools now return (figure, data_summary); summarize_column returns a dict directly
     if tool_name == "summarize_column":
-        return {"tool_used": tool_name, "tool_input": tool_input, "result": result}
+        chart_fig = None
+        data_summary = result
+    else:
+        chart_fig, data_summary = result
 
-    return {"tool_used": tool_name, "tool_input": tool_input, "chart": result.to_json()}
+    # Generate a plain-English findings summary using REAL computed data
+    findings_context = json.dumps(data_summary)
+
+    findings_response = client.messages.create(
+        model="claude-sonnet-5",
+        max_tokens=200,
+        messages=[{
+            "role": "user",
+            "content": (
+                f"You just ran a data analysis. The question was: '{request.question}'. "
+                f"Here is the computed result:\n{findings_context}\n\n"
+                f"Write a 1-3 sentence plain-English summary of what this shows, "
+                f"like a data analyst explaining findings to a colleague. Be direct and specific with numbers."
+            )
+        }]
+    )
+    findings_text = findings_response.content[0].text
+
+    if tool_name == "summarize_column":
+        return {"tool_used": tool_name, "tool_input": tool_input, "result": data_summary, "findings": findings_text}
+
+    return {"tool_used": tool_name, "tool_input": tool_input, "chart": chart_fig.to_json(), "findings": findings_text}
 
 
 @app.get("/")
 async def root():
-    return {"message": "AI Data Analyst API is running."}
+    return {"message": "AI Data Analyst API is running."}   

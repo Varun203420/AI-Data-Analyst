@@ -61,24 +61,35 @@ TOOLS = [
 
 
 # ---------- Tool implementations (what actually runs) ----------
+# The three chart tools return (figure, data_summary) so the /ask endpoint can
+# feed REAL computed numbers into the plain-English findings step, not just
+# the parameters that were used to build the chart.
 
 def plot_trend(df: pd.DataFrame, x_col: str, y_col: str):
     _validate_columns(df, [x_col, y_col])
     fig = px.line(df, x=x_col, y=y_col, title=f"{y_col} over {x_col}")
-    return fig
+    data_summary = df[[x_col, y_col]].to_dict(orient="records")
+    return fig, data_summary
 
 
 def compare_categories(df: pd.DataFrame, cat_col: str, value_col: str, agg: str):
     _validate_columns(df, [cat_col, value_col])
     grouped = df.groupby(cat_col)[value_col].agg(agg).reset_index()
     fig = px.bar(grouped, x=cat_col, y=value_col, title=f"{agg} of {value_col} by {cat_col}")
-    return fig
+    data_summary = grouped.to_dict(orient="records")
+    return fig, data_summary
 
 
 def distribution(df: pd.DataFrame, col: str):
     _validate_columns(df, [col])
     fig = px.histogram(df, x=col, title=f"Distribution of {col}")
-    return fig
+    data_summary = {
+        "min": float(df[col].min()),
+        "max": float(df[col].max()),
+        "mean": float(df[col].mean()),
+        "median": float(df[col].median()),
+    }
+    return fig, data_summary
 
 
 def summarize_column(df: pd.DataFrame, col: str):
