@@ -5,6 +5,7 @@ import io
 import uuid
 import os
 import json
+import math
 from dotenv import load_dotenv
 from anthropic import Anthropic
 
@@ -17,6 +18,19 @@ app = FastAPI(title="AI Data Analyst")
 
 # In-memory session store: {session_id: DataFrame}
 sessions: dict[str, pd.DataFrame] = {}
+
+
+def clean_nan(obj):
+    """Recursively replace NaN/inf floats with None so the result is valid JSON.
+    Must run on plain Python objects (post to_dict()), not on the DataFrame itself,
+    since numeric numpy columns silently convert None back to NaN."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: clean_nan(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [clean_nan(v) for v in obj]
+    return obj
 
 
 @app.post("/upload")
@@ -42,7 +56,7 @@ async def upload_csv(file: UploadFile = File(...)):
         "columns": list(df.columns),
         "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
         "num_rows": len(df),
-        "sample_rows": df.head(5).where(pd.notnull(df.head(5)), None).to_dict(orient="records"), 
+        "sample_rows": clean_nan(df.head(5).to_dict(orient="records")),
     }
 
     return schema
@@ -63,7 +77,7 @@ async def ask_question(request: AskRequest):
     schema_summary = {
         "columns": list(df.columns),
         "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-        "sample_rows": df.head(3).where(pd.notnull(df.head(3)), None).to_dict(orient="records"),
+        "sample_rows": clean_nan(df.head(3).to_dict(orient="records")),
     }
 
     system_prompt = (
@@ -110,7 +124,7 @@ async def ask_question(request: AskRequest):
         chart_fig, data_summary = result
 
     # Generate a plain-English findings summary using REAL computed data
-    findings_context = json.dumps(data_summary)
+    findings_context = json.dumps(clean_nan(data_summary))
 
     findings_response = client.messages.create(
         model="claude-sonnet-5",
@@ -128,11 +142,11 @@ async def ask_question(request: AskRequest):
     findings_text = findings_response.content[0].text
 
     if tool_name == "summarize_column":
-        return {"tool_used": tool_name, "tool_input": tool_input, "result": data_summary, "findings": findings_text}
+        return {"tool_used": tool_name, "tool_input": tool_input, "result": clean_nan(data_summary), "findings": findings_text}
 
     return {"tool_used": tool_name, "tool_input": tool_input, "chart": chart_fig.to_json(), "findings": findings_text}
 
 
 @app.get("/")
 async def root():
-    return {"message": "AI Data Analyst API is running."}   
+    return {"message": "AI Data Analyst API is running."}
