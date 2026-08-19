@@ -15,8 +15,27 @@ if "columns" not in st.session_state:
     st.session_state.columns = None
 if "dtypes" not in st.session_state:
     st.session_state.dtypes = None
+if "num_rows" not in st.session_state:
+    st.session_state.num_rows = None
+if "filename" not in st.session_state:
+    st.session_state.filename = None
 if "question" not in st.session_state:
     st.session_state.question = ""
+
+# Sidebar — persistent dataset info once uploaded
+with st.sidebar:
+    st.header("Dataset")
+    if st.session_state.session_id:
+        st.metric("Rows", f"{st.session_state.num_rows:,}")
+        st.caption(f"File: {st.session_state.filename}")
+        st.divider()
+        st.caption("Columns")
+        for col in st.session_state.columns:
+            dtype = st.session_state.dtypes.get(col, "")
+            kind = "🔢" if ("int" in dtype or "float" in dtype) else "🔤"
+            st.text(f"{kind} {col}")
+    else:
+        st.caption("Upload a CSV to see dataset details here.")
 
 uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
 
@@ -30,15 +49,16 @@ if uploaded_file is not None:
             st.session_state.session_id = data["session_id"]
             st.session_state.columns = data["columns"]
             st.session_state.dtypes = data["dtypes"]
-            st.success(f"Uploaded! {data['num_rows']} rows, columns: {', '.join(data['columns'])}")
+            st.session_state.num_rows = data["num_rows"]
+            st.session_state.filename = uploaded_file.name
+            st.success(f"Uploaded! {data['num_rows']} rows, {len(data['columns'])} columns.")
         else:
             st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
 
 if st.session_state.session_id:
     st.divider()
 
-    # Example question buttons — built from REAL numeric/categorical columns,
-    # not just column position, since the last column isn't always numeric.
+    # Example question buttons — built from REAL numeric/categorical columns
     cols = st.session_state.columns or []
     dtypes = st.session_state.dtypes or {}
 
@@ -74,13 +94,14 @@ if st.session_state.session_id:
             if "answer" in result:
                 st.write(result["answer"])
             else:
-                if "findings" in result:
-                    st.markdown(f"**{result['findings']}**")
-                if "chart" in result:
-                    chart_dict = json.loads(result["chart"])
-                    st.plotly_chart(chart_dict, use_container_width=True)
-                elif "result" in result:
-                    with st.expander("Show raw stats"):
-                        st.json(result["result"])
+                with st.container(border=True):
+                    if "findings" in result:
+                        st.markdown(f"**{result['findings']}**")
+                    if "chart" in result:
+                        chart_dict = json.loads(result["chart"])
+                        st.plotly_chart(chart_dict, use_container_width=True)
+                    elif "result" in result:
+                        with st.expander("Show raw stats"):
+                            st.json(result["result"])
         else:
             st.error(f"Error: {response.json().get('detail', 'Unknown error')}")
