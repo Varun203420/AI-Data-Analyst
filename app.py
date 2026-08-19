@@ -8,7 +8,7 @@ st.set_page_config(page_title="AI Data Analyst", layout="wide")
 st.title("AI Data Analyst")
 st.caption("Upload a CSV, ask questions in plain English, get charts and insights.")
 
-# Persist session_id, schema, and the current question text across reruns
+# Persist session_id, schema, the current question text, and Q&A history across reruns
 if "session_id" not in st.session_state:
     st.session_state.session_id = None
 if "columns" not in st.session_state:
@@ -21,6 +21,8 @@ if "filename" not in st.session_state:
     st.session_state.filename = None
 if "question" not in st.session_state:
     st.session_state.question = ""
+if "history" not in st.session_state:
+    st.session_state.history = []
 
 # Sidebar — persistent dataset info once uploaded
 with st.sidebar:
@@ -51,6 +53,7 @@ if uploaded_file is not None:
             st.session_state.dtypes = data["dtypes"]
             st.session_state.num_rows = data["num_rows"]
             st.session_state.filename = uploaded_file.name
+            st.session_state.history = []  # new dataset = fresh conversation
             st.success(f"Uploaded! {data['num_rows']} rows, {len(data['columns'])} columns.")
         else:
             st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
@@ -90,18 +93,26 @@ if st.session_state.session_id:
 
         if response.status_code == 200:
             result = response.json()
-
-            if "answer" in result:
-                st.write(result["answer"])
-            else:
-                with st.container(border=True):
-                    if "findings" in result:
-                        st.markdown(f"**{result['findings']}**")
-                    if "chart" in result:
-                        chart_dict = json.loads(result["chart"])
-                        st.plotly_chart(chart_dict, use_container_width=True)
-                    elif "result" in result:
-                        with st.expander("Show raw stats"):
-                            st.json(result["result"])
+            # Save this Q&A pair to history instead of just rendering it once
+            st.session_state.history.insert(0, {"question": question, "result": result})
         else:
             st.error(f"Error: {response.json().get('detail', 'Unknown error')}")
+
+    # Render conversation history, most recent first
+    for entry in st.session_state.history:
+        st.markdown(f"**Q: {entry['question']}**")
+        result = entry["result"]
+
+        if "answer" in result:
+            st.write(result["answer"])
+        else:
+            with st.container(border=True):
+                if "findings" in result:
+                    st.markdown(result["findings"])
+                if "chart" in result:
+                    chart_dict = json.loads(result["chart"])
+                    st.plotly_chart(chart_dict, use_container_width=True)
+                elif "result" in result:
+                    with st.expander("Show raw stats"):
+                        st.json(result["result"])
+        st.divider()
