@@ -72,10 +72,18 @@ def plot_trend(df: pd.DataFrame, x_col: str, y_col: str):
     return fig, data_summary
 
 
-def compare_categories(df: pd.DataFrame, cat_col: str, value_col: str, agg: str):
+def compare_categories(df: pd.DataFrame, cat_col: str, value_col: str, agg: str, top_n: int = 15):
     _validate_columns(df, [cat_col, value_col])
     grouped = df.groupby(cat_col)[value_col].agg(agg).reset_index()
-    fig = px.bar(grouped, x=cat_col, y=value_col, title=f"{agg} of {value_col} by {cat_col}")
+
+    total_categories = len(grouped)
+    if total_categories > top_n:
+        grouped = grouped.sort_values(value_col, ascending=False).head(top_n)
+        title = f"{agg} of {value_col} by {cat_col} (top {top_n} of {total_categories} categories)"
+    else:
+        title = f"{agg} of {value_col} by {cat_col}"
+
+    fig = px.bar(grouped, x=cat_col, y=value_col, title=title)
     data_summary = grouped.to_dict(orient="records")
     return fig, data_summary
 
