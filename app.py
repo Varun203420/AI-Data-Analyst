@@ -8,11 +8,15 @@ st.set_page_config(page_title="AI Data Analyst", layout="wide")
 st.title("AI Data Analyst")
 st.caption("Upload a CSV, ask questions in plain English, get charts and insights.")
 
-# Persist session_id and schema across reruns
+# Persist session_id, schema, and the current question text across reruns
 if "session_id" not in st.session_state:
     st.session_state.session_id = None
 if "columns" not in st.session_state:
     st.session_state.columns = None
+if "dtypes" not in st.session_state:
+    st.session_state.dtypes = None
+if "question" not in st.session_state:
+    st.session_state.question = ""
 
 uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
 
@@ -25,17 +29,44 @@ if uploaded_file is not None:
             data = response.json()
             st.session_state.session_id = data["session_id"]
             st.session_state.columns = data["columns"]
+            st.session_state.dtypes = data["dtypes"]
             st.success(f"Uploaded! {data['num_rows']} rows, columns: {', '.join(data['columns'])}")
         else:
             st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
 
 if st.session_state.session_id:
     st.divider()
-    question = st.text_input("Ask a question about your data:")
+
+    # Example question buttons — built from REAL numeric/categorical columns,
+    # not just column position, since the last column isn't always numeric.
+    cols = st.session_state.columns or []
+    dtypes = st.session_state.dtypes or {}
+
+    numeric_cols = [c for c in cols if "int" in dtypes.get(c, "") or "float" in dtypes.get(c, "")]
+    categorical_cols = [c for c in cols if c not in numeric_cols]
+
+    if numeric_cols and categorical_cols:
+        st.caption("Try asking:")
+        example_questions = [
+            f"What's the average {numeric_cols[0]}?",
+            f"Compare {numeric_cols[0]} by {categorical_cols[0]}",
+            f"What's the distribution of {numeric_cols[0]}?",
+        ]
+        btn_cols = st.columns(len(example_questions))
+        for btn_col, example in zip(btn_cols, example_questions):
+            if btn_col.button(example, key=f"example_{example}"):
+                st.session_state.question = example
+                st.rerun()
+    elif numeric_cols:
+        st.caption(f"Try asking: What's the average {numeric_cols[0]}?")
+
+    question = st.text_input("Ask a question about your data:", key="question")
 
     if st.button("Ask") and question:
         payload = {"session_id": st.session_state.session_id, "question": question}
-        response = requests.post(f"{API_URL}/ask", json=payload)
+
+        with st.spinner("Analyzing your data..."):
+            response = requests.post(f"{API_URL}/ask", json=payload)
 
         if response.status_code == 200:
             result = response.json()
